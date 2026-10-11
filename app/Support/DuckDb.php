@@ -16,7 +16,7 @@ class DuckDb
         $process->run();
 
         if (! $process->isSuccessful()) {
-            throw new RuntimeException('DuckDB command failed with exit code '.$process->getExitCode().'.');
+            throw new RuntimeException('DuckDB command failed with exit code '.$process->getExitCode().': '.$this->sanitizedError($process->getErrorOutput()));
         }
 
         $output = trim($process->getOutput());
@@ -123,5 +123,25 @@ class DuckDb
             $this->literal('ducklake:postgres:'.$dsn),
             $this->literal($dataPath),
         );
+    }
+
+    private function sanitizedError(string $error): string
+    {
+        $secrets = [
+            config('database.connections.pgsql.password'),
+            config('filesystems.disks.s3.key'),
+            config('filesystems.disks.s3.secret'),
+        ];
+
+        foreach ($secrets as $secret) {
+            if (is_string($secret) && $secret !== '') {
+                $error = str_replace($secret, '[REDACTED]', $error);
+            }
+        }
+
+        $error = preg_replace('/password=[^\s\'";]+/i', 'password=[REDACTED]', $error) ?? $error;
+        $error = preg_replace('/\b(KEY_ID|SECRET)\s+\'[^\']*\'/i', '$1 \'[REDACTED]\'', $error) ?? $error;
+
+        return mb_substr(trim($error), 0, 1200);
     }
 }

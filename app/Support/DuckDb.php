@@ -98,7 +98,7 @@ class DuckDb
         $useSsl = str_starts_with($endpoint, 'https://') ? 'true' : 'false';
         $pathStyle = ! empty($disk['use_path_style_endpoint']) ? 'path' : 'vhost';
         $s3Secret = sprintf(
-            'CREATE OR REPLACE TEMP SECRET cloud_s3 (TYPE s3, KEY_ID %s, SECRET %s, REGION %s, ENDPOINT %s, URL_STYLE %s, USE_SSL %s);',
+            'CREATE OR REPLACE TEMPORARY SECRET cloud_s3 (TYPE s3, KEY_ID %s, SECRET %s, REGION %s, ENDPOINT %s, URL_STYLE %s, USE_SSL %s);',
             $this->literal((string) ($disk['key'] ?? '')),
             $this->literal((string) ($disk['secret'] ?? '')),
             $this->literal((string) ($disk['region'] ?? 'auto')),
@@ -131,6 +131,8 @@ class DuckDb
             config('database.connections.pgsql.password'),
             config('filesystems.disks.s3.key'),
             config('filesystems.disks.s3.secret'),
+            config('filesystems.disks.s3.access_key_id'),
+            config('filesystems.disks.s3.access_key_secret'),
         ];
 
         foreach ($secrets as $secret) {
@@ -141,6 +143,7 @@ class DuckDb
 
         $error = preg_replace('/password=[^\s\'";]+/i', 'password=[REDACTED]', $error) ?? $error;
         $error = preg_replace('/\b(KEY_ID|SECRET)\s+\'[^\']*\'/i', '$1 \'[REDACTED]\'', $error) ?? $error;
+        $error = preg_replace('/\b(KEY_ID|SECRET)\s+[^,\)\n]+/i', '$1 [REDACTED]', $error) ?? $error;
 
         return mb_substr(trim($error), 0, 1200);
     }

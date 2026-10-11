@@ -245,7 +245,7 @@ class DuckDb
     }
 
     /** @return array{stdout: string, stderr: string, wall_ms: float} */
-    private function runRaw(string $input, int $timeout): array
+    private function runRaw(#[\SensitiveParameter] string $input, int $timeout): array
     {
         $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-jsonlines']);
         $process->setTimeout($timeout);

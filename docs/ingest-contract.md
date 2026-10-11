@@ -55,9 +55,10 @@ resolved Postgres and S3 configuration for each CLI process. Credentials are sen
 stdin and are never persisted in DuckDB secret storage or a file.
 
 The flusher disables data inlining (`DATA_INLINING_ROW_LIMIT 0`) because the product requirement is
-that log rows land in Parquet, not the catalog. A daily `CHECKPOINT` flushes any inline residue,
-merges adjacent small files, rewrites data files, expires eligible snapshots, and cleans old or
-orphaned files. Seven days is the experiment's safety window for snapshot/file deletion.
+that log rows land in Parquet, not the catalog. A daily maintenance command explicitly merges
+adjacent small files, then runs `CHECKPOINT` to rewrite data files, expire eligible snapshots, and
+clean old or orphaned files. Thirty days is the experiment's safety window for snapshot/file
+deletion.
 
 ## Compatibility boundary for a Rust ingest edge
 

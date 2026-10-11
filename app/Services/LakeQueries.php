@@ -13,9 +13,12 @@ class LakeQueries
      */
     public function search(array $filters): array
     {
+        $from = $this->duckDb->literal((string) $filters['from']);
+        $to = $this->duckDb->literal((string) $filters['to']);
         $where = [
-            'occurred_at >= CAST('.$this->duckDb->literal((string) $filters['from']).' AS TIMESTAMPTZ)',
-            'occurred_at <= CAST('.$this->duckDb->literal((string) $filters['to']).' AS TIMESTAMPTZ)',
+            "event_date BETWEEN CAST({$from} AS DATE) AND CAST({$to} AS DATE)",
+            "occurred_at >= CAST({$from} AS TIMESTAMPTZ)",
+            "occurred_at <= CAST({$to} AS TIMESTAMPTZ)",
         ];
 
         if (! empty($filters['app'])) {
@@ -47,7 +50,11 @@ class LakeQueries
     public function aggregate(string $from, string $to, string $bucket = 'hour', ?string $app = null): array
     {
         $unit = in_array($bucket, ['hour', 'day'], true) ? $bucket : 'hour';
-        $where = 'occurred_at >= CAST('.$this->duckDb->literal($from).' AS TIMESTAMPTZ) AND occurred_at <= CAST('.$this->duckDb->literal($to).' AS TIMESTAMPTZ)';
+        $fromLiteral = $this->duckDb->literal($from);
+        $toLiteral = $this->duckDb->literal($to);
+        $where = "event_date BETWEEN CAST({$fromLiteral} AS DATE) AND CAST({$toLiteral} AS DATE) "
+            ."AND occurred_at >= CAST({$fromLiteral} AS TIMESTAMPTZ) "
+            ."AND occurred_at <= CAST({$toLiteral} AS TIMESTAMPTZ)";
 
         if ($app !== null && $app !== '') {
             $where .= ' AND app_slug = '.$this->duckDb->literal($app);

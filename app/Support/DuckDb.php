@@ -45,6 +45,73 @@ class DuckDb
         ];
     }
 
+    /**
+     * Measure the request-time query path without ever returning connection credentials.
+     *
+     * @return array<string, mixed>
+     */
+    public function profileQuery(string $sql, int $runs = 3, int $timeout = 120): array
+    {
+        $runs = min(7, max(1, $runs));
+        $stages = [
+            'process_start' => 'SELECT 1;',
+            'extensions_and_settings' => $this->settingsSql().' '.$this->extensionsSql().' SELECT 1;',
+            'catalog_attach' => $this->preamble().' SELECT 1;',
+        ];
+        $samples = [];
+
+        foreach ($stages as $name => $input) {
+            $samples[$name] = [];
+
+            for ($run = 0; $run < $runs; $run++) {
+                $samples[$name][] = $this->runRaw($input, $timeout)['wall_ms'];
+            }
+        }
+
+        $profileSql = $this->preamble()."\n"
+            ."CALL enable_logging('HTTP');\n"
+            .'EXPLAIN ANALYZE '.rtrim(trim($sql), ';').";\n"
+            ."SELECT request.type AS method, response.status AS status, count(*) AS requests, coalesce(sum(request.duration_ms), 0) AS request_ms FROM duckdb_logs_parsed('HTTP') GROUP BY ALL ORDER BY method, status;";
+        $profile = $this->runRaw($profileSql, $timeout);
+        $decoded = $this->decodeJsonLines($profile['stdout']);
+        $rawPlan = $profile['stdout']."\n".$profile['stderr'];
+        $plan = preg_replace('/\e\[[0-9;]*m/', '', $rawPlan) ?? $rawPlan;
+        $http = [];
+
+        foreach ($decoded as $row) {
+            if (isset($row['explain_value'])) {
+                $plan .= (string) $row['explain_value'];
+            }
+
+            if (isset($row['requests'])) {
+                $http[] = $row;
+            }
+        }
+
+        preg_match('/Total Time:\s*([0-9.]+)s/', $plan, $totalMatch);
+        preg_match('/HTTP Requests:\s*([0-9]+)/', $plan, $requestMatch);
+        preg_match('/in:\s*([^\n│]+)/', $plan, $bytesInMatch);
+        preg_match('/out:\s*([^\n│]+)/', $plan, $bytesOutMatch);
+
+        return [
+            'runs' => $runs,
+            'settings' => [
+                'threads' => (int) config('ducklake.threads'),
+                'memory_limit' => (string) config('ducklake.memory_limit'),
+            ],
+            'cumulative_wall_ms' => array_map(fn (array $values): array => [
+                'samples' => array_map(fn (float $value): float => round($value, 2), $values),
+                'median' => round($this->median($values), 2),
+            ], $samples),
+            'profile_wall_ms' => round($profile['wall_ms'], 2),
+            'query_total_ms' => isset($totalMatch[1]) ? round(((float) $totalMatch[1]) * 1000, 2) : null,
+            'explain_http_requests' => isset($requestMatch[1]) ? (int) $requestMatch[1] : null,
+            'explain_bytes_in' => isset($bytesInMatch[1]) ? trim($bytesInMatch[1]) : null,
+            'explain_bytes_out' => isset($bytesOutMatch[1]) ? trim($bytesOutMatch[1]) : null,
+            'http' => $http,
+        ];
+    }
+
     public function bootstrap(): void
     {
         $this->query(<<<'SQL'
@@ -108,14 +175,13 @@ class DuckDb
 
     private function preamble(): string
     {
-        $extensions = $this->literal((string) config('ducklake.extension_directory'));
         $database = config('database.connections.pgsql');
         $disk = config('filesystems.disks.s3');
 
         if (! config('ducklake.cloud') || ! is_array($database) || empty($database['host']) || ! is_array($disk) || empty($disk['bucket'])) {
             $dataPath = $this->literal(storage_path('app/ducklake/data/'));
 
-            return "SET extension_directory={$extensions}; LOAD ducklake; LOAD postgres; LOAD httpfs; ATTACH ".$this->literal('ducklake:'.storage_path('app/ducklake/catalog.ducklake'))." AS lake (DATA_PATH {$dataPath}, DATA_INLINING_ROW_LIMIT 0);";
+            return $this->settingsSql().' '.$this->extensionsSql().' ATTACH '.$this->literal('ducklake:'.storage_path('app/ducklake/catalog.ducklake'))." AS lake (DATA_PATH {$dataPath}, DATA_INLINING_ROW_LIMIT 0);";
         }
 
         $endpoint = (string) ($disk['endpoint'] ?? '');
@@ -142,12 +208,76 @@ class DuckDb
         $dataPath = 's3://'.$disk['bucket'].'/'.ltrim((string) config('ducklake.data_prefix'), '/');
 
         return sprintf(
-            'SET extension_directory=%s; LOAD ducklake; LOAD postgres; LOAD httpfs; %s ATTACH %s AS lake (DATA_PATH %s, DATA_INLINING_ROW_LIMIT 0);',
-            $extensions,
+            '%s %s %s ATTACH %s AS lake (DATA_PATH %s, DATA_INLINING_ROW_LIMIT 0);',
+            $this->settingsSql(),
+            $this->extensionsSql(),
             $s3Secret,
             $this->literal('ducklake:postgres:'.$dsn),
             $this->literal($dataPath),
         );
+    }
+
+    private function settingsSql(): string
+    {
+        $memory = $this->literal((string) config('ducklake.memory_limit', '384MB'));
+        $threads = max(1, (int) config('ducklake.threads', 1));
+
+        return "SET threads={$threads}; SET memory_limit={$memory};";
+    }
+
+    private function extensionsSql(): string
+    {
+        $extensions = $this->literal((string) config('ducklake.extension_directory'));
+
+        return "SET extension_directory={$extensions}; LOAD ducklake; LOAD postgres; LOAD httpfs;";
+    }
+
+    /** @return array{stdout: string, stderr: string, wall_ms: float} */
+    private function runRaw(string $input, int $timeout): array
+    {
+        $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-jsonlines']);
+        $process->setTimeout($timeout);
+        $process->setInput($input);
+        $started = hrtime(true);
+        $process->run();
+        $wall = (hrtime(true) - $started) / 1_000_000;
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('DuckDB profiling failed with exit code '.$process->getExitCode().': '.$this->sanitizedError($process->getErrorOutput()));
+        }
+
+        return [
+            'stdout' => $process->getOutput(),
+            'stderr' => $this->sanitizedError($process->getErrorOutput()),
+            'wall_ms' => $wall,
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function decodeJsonLines(string $output): array
+    {
+        $rows = [];
+
+        foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
+            $decoded = json_decode($line, true);
+
+            if (is_array($decoded) && array_keys($decoded) !== ['Success']) {
+                $rows[] = $decoded;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @param list<float> $values */
+    private function median(array $values): float
+    {
+        sort($values);
+        $middle = intdiv(count($values), 2);
+
+        return count($values) % 2 === 0
+            ? ($values[$middle - 1] + $values[$middle]) / 2
+            : $values[$middle];
     }
 
     private function sanitizedError(string $error): string

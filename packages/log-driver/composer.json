@@ -1,0 +1,26 @@
+{
+    "name": "artisan-build/ducklake-log-driver",
+    "description": "Experimental non-blocking Laravel log driver for the DuckLake log sink.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^11.0|^12.0|^13.0",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "illuminate/log": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "monolog/monolog": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ArtisanBuild\\DucklakeLogDriver\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ArtisanBuild\\DucklakeLogDriver\\DucklakeLogServiceProvider"
+            ]
+        }
+    }
+}

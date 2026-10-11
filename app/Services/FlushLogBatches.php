@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LogBatch;
 use App\Support\DuckDb;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -40,11 +41,26 @@ class FlushLogBatches
         }
 
         $values = [];
+        $locators = [];
+        $hourly = [];
         $rows = 0;
 
         foreach ($batches as $batch) {
             foreach ((array) $batch->payload as $log) {
                 $values[] = $this->rowSql($batch, (array) $log);
+                $timestamp = Carbon::parse((string) $log['timestamp'])->utc();
+                $locators[] = [
+                    'event_id' => (string) $log['id'],
+                    'app_slug' => $batch->app->slug,
+                    'occurred_at' => $timestamp,
+                ];
+                $key = $timestamp->copy()->startOfHour()->toIso8601String().'|'.$batch->app->slug.'|'.strtolower((string) $log['level']);
+                $hourly[$key] = [
+                    'bucket' => $timestamp->copy()->startOfHour(),
+                    'app_slug' => $batch->app->slug,
+                    'level' => strtolower((string) $log['level']),
+                    'count' => ($hourly[$key]['count'] ?? 0) + 1,
+                ];
                 $rows++;
             }
         }
@@ -53,7 +69,17 @@ class FlushLogBatches
             $this->duckDb->bootstrap();
             $this->duckDb->query('INSERT INTO lake.logs VALUES '.implode(",\n", $values).'; SELECT '.$rows.' AS inserted;', 120);
 
-            DB::transaction(function () use ($batches): void {
+            DB::transaction(function () use ($batches, $hourly, $locators): void {
+                DB::table('log_event_locators')->insertOrIgnore($locators);
+
+                foreach ($hourly as $count) {
+                    DB::statement(
+                        'INSERT INTO log_hourly_counts (bucket, app_slug, level, count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) '
+                        .'ON CONFLICT (bucket, app_slug, level) DO UPDATE SET count = log_hourly_counts.count + excluded.count, updated_at = excluded.updated_at',
+                        [$count['bucket'], $count['app_slug'], $count['level'], $count['count'], now(), now()],
+                    );
+                }
+
                 foreach ($batches as $batch) {
                     $batch->app()->increment('flushed_lines', $batch->row_count);
                     $batch->update([

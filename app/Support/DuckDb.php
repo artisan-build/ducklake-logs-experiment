@@ -28,6 +28,26 @@ class DuckDb
         return $this->decodeFramedOutput($output);
     }
 
+    /** @return list<array<string, mixed>> */
+    public function queryWithApplicationDatabase(string $sql, int $timeout = 300): array
+    {
+        if (! config('ducklake.cloud')) {
+            throw new RuntimeException('Application database export is only available with the Cloud Postgres catalog.');
+        }
+
+        $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-jsonlines']);
+        $process->setTimeout($timeout);
+        $attach = 'ATTACH '.$this->literal('postgres:'.$this->postgresDsn()).' AS appdb (TYPE postgres);';
+        $process->setInput($this->preamble()."\n{$attach}\nSELECT '__DUCKLAKE_RESULT_START__' AS marker;\n".$sql."\nSELECT '__DUCKLAKE_RESULT_END__' AS marker;\n");
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('DuckDB application database export failed with exit code '.$process->getExitCode().': '.$this->sanitizedError($process->getErrorOutput()));
+        }
+
+        return $this->decodeFramedOutput(trim($process->getOutput()));
+    }
+
     /** @return array<string, mixed> */
     public function runtimeProbe(): array
     {
@@ -142,6 +162,7 @@ class DuckDb
             ALTER TABLE lake.logs SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs SET SORTED BY (app_slug ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs');
+            CALL lake.set_option('parquet_row_group_size', '10000', table_name => 'logs');
             SQL, 60);
     }
 
@@ -209,14 +230,6 @@ class DuckDb
             $this->literal($pathStyle),
             $useSsl,
         );
-        $dsn = sprintf(
-            'host=%s port=%s dbname=%s user=%s password=%s sslmode=require',
-            $database['host'],
-            $database['port'] ?? 5432,
-            $database['database'],
-            $database['username'],
-            $database['password'],
-        );
         $dataPath = 's3://'.$disk['bucket'].'/'.ltrim((string) config('ducklake.data_prefix'), '/');
 
         return sprintf(
@@ -224,8 +237,22 @@ class DuckDb
             $this->settingsSql(),
             $this->extensionsSql(),
             $s3Secret,
-            $this->literal('ducklake:postgres:'.$dsn),
+            $this->literal('ducklake:postgres:'.$this->postgresDsn()),
             $this->literal($dataPath),
+        );
+    }
+
+    private function postgresDsn(): string
+    {
+        $database = config('database.connections.pgsql');
+
+        return sprintf(
+            'host=%s port=%s dbname=%s user=%s password=%s sslmode=require',
+            $database['host'],
+            $database['port'] ?? 5432,
+            $database['database'],
+            $database['username'],
+            $database['password'],
         );
     }
 

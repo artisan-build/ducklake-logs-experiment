@@ -8,13 +8,19 @@ use RuntimeException;
 
 class ReshapeLake extends Command
 {
-    protected $signature = 'logs:reshape-lake';
+    protected $signature = 'logs:reshape-lake {--archive=logs_phase1_archive}';
 
     protected $description = 'Rewrite logs into day partitions with app/time sorted files.';
 
     public function handle(DuckDb $duckDb): int
     {
-        $archive = $duckDb->query("SELECT count(*) AS tables FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'logs_phase1_archive';", 60);
+        $archiveName = (string) $this->option('archive');
+
+        if (preg_match('/^[a-z][a-z0-9_]{0,62}$/', $archiveName) !== 1) {
+            throw new RuntimeException('Archive must be a safe unquoted SQL identifier.');
+        }
+
+        $archive = $duckDb->query("SELECT count(*) AS tables FROM information_schema.tables WHERE table_schema = 'main' AND table_name = '{$archiveName}';", 60);
 
         if ((int) ($archive[0]['tables'] ?? 0) !== 0) {
             throw new RuntimeException('Phase-one archive already exists; refusing to reshape twice.');
@@ -38,6 +44,7 @@ class ReshapeLake extends Command
             ALTER TABLE lake.logs_phase2 SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs_phase2 SET SORTED BY (app_slug ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs_phase2');
+            CALL lake.set_option('parquet_row_group_size', '10000', table_name => 'logs_phase2');
             SQL, 120);
 
         $dates = $duckDb->query('SELECT DISTINCT event_date::VARCHAR AS event_date FROM lake.logs ORDER BY event_date;', 300);
@@ -55,13 +62,13 @@ class ReshapeLake extends Command
             throw new RuntimeException('Rewritten row count does not match the phase-one archive.');
         }
 
-        $files = $duckDb->query(<<<'SQL'
+        $files = $duckDb->query(<<<SQL
             BEGIN;
-            ALTER TABLE lake.logs RENAME TO logs_phase1_archive;
+            ALTER TABLE lake.logs RENAME TO {$archiveName};
             ALTER TABLE lake.logs_phase2 RENAME TO logs;
             COMMIT;
             SELECT
-                (SELECT count(*) FROM ducklake_list_files('lake', 'logs_phase1_archive')) AS source_files,
+                (SELECT count(*) FROM ducklake_list_files('lake', '{$archiveName}')) AS source_files,
                 (SELECT count(*) FROM ducklake_list_files('lake', 'logs')) AS rewritten_files;
             SQL, 120);
         $stats = array_merge($stats, $files[array_key_last($files)] ?? []);

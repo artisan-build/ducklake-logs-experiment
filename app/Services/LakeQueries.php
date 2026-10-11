@@ -15,6 +15,27 @@ class LakeQueries
      */
     public function search(array $filters): array
     {
+        if (($filters['level'] ?? null) === 'error'
+            && ! empty($filters['app'])
+            && empty($filters['text'])
+            && empty($filters['regex'])
+            && Schema::hasTable('log_error_events')) {
+            $started = hrtime(true);
+            $limit = min(500, max(1, (int) ($filters['limit'] ?? 100)));
+            $rows = DB::table('log_error_events')
+                ->where('app_slug', (string) $filters['app'])
+                ->where('occurred_at', '>=', (string) $filters['from'])
+                ->where('occurred_at', '<=', (string) $filters['to'])
+                ->orderByDesc('occurred_at')
+                ->limit($limit)
+                ->get(['event_id', 'app_slug', 'occurred_at', 'level', 'channel', 'message', 'context', 'extra']);
+
+            return [
+                'query_ms' => round((hrtime(true) - $started) / 1_000_000, 2),
+                'rows' => $rows->map(fn (object $row): array => (array) $row)->all(),
+            ];
+        }
+
         $from = $this->duckDb->literal((string) $filters['from']);
         $to = $this->duckDb->literal((string) $filters['to']);
         $where = [

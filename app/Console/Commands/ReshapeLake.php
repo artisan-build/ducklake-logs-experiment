@@ -44,7 +44,6 @@ class ReshapeLake extends Command
             ALTER TABLE lake.logs_phase2 SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs_phase2 SET SORTED BY (app_slug ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs_phase2');
-            CALL lake.set_option('parquet_row_group_size', '10000', table_name => 'logs_phase2');
             SQL, 120);
 
         $dates = $duckDb->query('SELECT DISTINCT event_date::VARCHAR AS event_date FROM lake.logs ORDER BY event_date;', 300);

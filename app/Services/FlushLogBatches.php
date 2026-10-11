@@ -42,6 +42,7 @@ class FlushLogBatches
 
         $values = [];
         $locators = [];
+        $errors = [];
         $hourly = [];
         $rows = 0;
 
@@ -54,6 +55,18 @@ class FlushLogBatches
                     'app_slug' => $batch->app->slug,
                     'occurred_at' => $timestamp,
                 ];
+                if (strtolower((string) $log['level']) === 'error') {
+                    $errors[] = [
+                        'event_id' => (string) $log['id'],
+                        'app_slug' => $batch->app->slug,
+                        'occurred_at' => $timestamp,
+                        'level' => 'error',
+                        'channel' => (string) ($log['channel'] ?? 'app'),
+                        'message' => (string) $log['message'],
+                        'context' => json_encode($log['context'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR),
+                        'extra' => json_encode($log['extra'] ?? [], JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR),
+                    ];
+                }
                 $key = $timestamp->copy()->startOfHour()->toIso8601String().'|'.$batch->app->slug.'|'.strtolower((string) $log['level']);
                 $hourly[$key] = [
                     'bucket' => $timestamp->copy()->startOfHour(),
@@ -69,8 +82,11 @@ class FlushLogBatches
             $this->duckDb->bootstrap();
             $this->duckDb->query('INSERT INTO lake.logs VALUES '.implode(",\n", $values).'; SELECT '.$rows.' AS inserted;', 120);
 
-            DB::transaction(function () use ($batches, $hourly, $locators): void {
+            DB::transaction(function () use ($batches, $errors, $hourly, $locators): void {
                 DB::table('log_event_locators')->insertOrIgnore($locators);
+                if ($errors !== []) {
+                    DB::table('log_error_events')->insertOrIgnore($errors);
+                }
 
                 foreach ($hourly as $count) {
                     DB::statement(

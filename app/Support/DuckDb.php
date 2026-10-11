@@ -162,7 +162,6 @@ class DuckDb
             ALTER TABLE lake.logs SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs SET SORTED BY (app_slug ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs');
-            CALL lake.set_option('parquet_row_group_size', '10000', table_name => 'logs');
             SQL, 60);
     }
 

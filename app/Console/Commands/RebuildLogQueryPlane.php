@@ -16,6 +16,7 @@ class RebuildLogQueryPlane extends Command
     {
         DB::table('log_event_locators')->truncate();
         DB::table('log_hourly_counts')->truncate();
+        DB::table('log_error_events')->truncate();
 
         $dates = $duckDb->query('SELECT DISTINCT event_date::VARCHAR AS event_date FROM lake.logs ORDER BY event_date;', 300);
 
@@ -26,6 +27,10 @@ class RebuildLogQueryPlane extends Command
                 SELECT event_id::UUID, app_slug, occurred_at
                 FROM lake.logs
                 WHERE event_date = CAST({$literal} AS DATE);
+                INSERT INTO appdb.public.log_error_events
+                SELECT event_id::UUID, app_slug, occurred_at, level, channel, message, context::JSON, extra::JSON
+                FROM lake.logs
+                WHERE event_date = CAST({$literal} AS DATE) AND level = 'error';
                 SELECT count(*) AS inserted FROM lake.logs WHERE event_date = CAST({$literal} AS DATE);
                 SQL, 600);
             $this->components->info('Indexed '.$date['event_date'].'.');

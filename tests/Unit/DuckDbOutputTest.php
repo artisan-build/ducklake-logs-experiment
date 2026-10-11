@@ -12,7 +12,7 @@ it('returns every row between framing markers and ignores attach success output'
         JSON;
     $method = new ReflectionMethod(DuckDb::class, 'decodeFramedOutput');
 
-    expect($method->invoke(app(DuckDb::class), $output))->toBe([
+    expect($method->invoke(resolve(DuckDb::class), $output))->toBe([
         ['event_id' => 'one', 'message' => 'first'],
         ['event_id' => 'two', 'message' => 'second'],
     ]);

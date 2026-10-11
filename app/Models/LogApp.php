@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
+/**
+ * @mixin IdeHelperLogApp
+ */
 class LogApp extends Model
 {
-    use HasFactory;
-
     protected $fillable = ['name', 'slug', 'token_hash', 'last_ingested_at', 'accepted_lines', 'flushed_lines'];
 
     protected function casts(): array
@@ -22,6 +22,7 @@ class LogApp extends Model
         ];
     }
 
+    /** @return HasMany<LogBatch, $this> */
     public function batches(): HasMany
     {
         return $this->hasMany(LogBatch::class);

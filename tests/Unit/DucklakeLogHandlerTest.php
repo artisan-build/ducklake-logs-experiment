@@ -6,6 +6,7 @@ use ArtisanBuild\DucklakeLogDriver\LogPayload;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Monolog\Level;
 use Monolog\LogRecord;
 
@@ -15,7 +16,7 @@ function driverHandler(?PayloadFilter $filter = null, array $overrides = []): Du
 
     return new DucklakeLogHandler(
         app(),
-        app(Factory::class),
+        resolve(Factory::class),
         $filter ?? new class implements PayloadFilter
         {
             public function filter(LogPayload $payload): ?LogPayload
@@ -41,7 +42,7 @@ function logRecord(array $context = []): LogRecord
 
 it('buffers during the request and performs slow network work only when flushed', function (): void {
     Http::fake(function () {
-        usleep(250_000);
+        Sleep::usleep(250_000);
 
         return Http::response(['accepted' => 1], 202);
     });

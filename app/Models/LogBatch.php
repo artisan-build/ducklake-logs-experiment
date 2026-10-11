@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @mixin IdeHelperLogBatch
+ */
 class LogBatch extends Model
 {
     use HasUuids;
@@ -24,6 +27,7 @@ class LogBatch extends Model
         ];
     }
 
+    /** @return BelongsTo<LogApp, $this> */
     public function app(): BelongsTo
     {
         return $this->belongsTo(LogApp::class, 'log_app_id');

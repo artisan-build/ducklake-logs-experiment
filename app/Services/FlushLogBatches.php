@@ -23,8 +23,7 @@ class FlushLogBatches
         $batches = DB::transaction(function () use ($limit): Collection {
             $claimed = LogBatch::query()
                 ->with('app')
-                ->where('status', 'pending')
-                ->orderBy('created_at')
+                ->where('status', 'pending')->oldest()
                 ->limit($limit ?? (int) config('ducklake.flush_batch_limit', 20))
                 ->lock('for update skip locked')
                 ->get();

@@ -6,6 +6,7 @@ use App\Support\DuckDb;
 use ArtisanBuild\DucklakeLogDriver\DucklakeLogHandler;
 use ArtisanBuild\DucklakeLogDriver\PassThroughPayloadFilter;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Route;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -19,18 +20,16 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('search', SearchController::class)->name('search');
 });
 
-Route::get('/probe/runtime', function (DuckDb $duckDb): array {
-    return [
-        'php' => PHP_VERSION,
-        'ffi_extension_loaded' => extension_loaded('ffi'),
-        'ffi_enabled' => extension_loaded('ffi') && (string) ini_get('ffi.enable') !== '',
-        'proc_open_available' => function_exists('proc_open'),
-        'cloud_disk_config_present' => isset($_ENV['LARAVEL_CLOUD_DISK_CONFIG']) || getenv('LARAVEL_CLOUD_DISK_CONFIG') !== false,
-        's3_config_resolved' => filled(config('filesystems.disks.s3.bucket')),
-        'pgsql_config_resolved' => filled(config('database.connections.pgsql.host')),
-        'duckdb' => $duckDb->runtimeProbe(),
-    ];
-})->name('probe.runtime');
+Route::get('/probe/runtime', fn (DuckDb $duckDb): array => [
+    'php' => PHP_VERSION,
+    'ffi_extension_loaded' => extension_loaded('ffi'),
+    'ffi_enabled' => extension_loaded('ffi') && (string) ini_get('ffi.enable') !== '',
+    'proc_open_available' => function_exists('proc_open'),
+    'cloud_disk_config_present' => Env::get('LARAVEL_CLOUD_DISK_CONFIG') !== null || getenv('LARAVEL_CLOUD_DISK_CONFIG') !== false,
+    's3_config_resolved' => filled(config('filesystems.disks.s3.bucket')),
+    'pgsql_config_resolved' => filled(config('database.connections.pgsql.host')),
+    'duckdb' => $duckDb->runtimeProbe(),
+])->name('probe.runtime');
 
 Route::get('/probe/driver-failure', function (Factory $http): array {
     $handler = new DucklakeLogHandler(app(), $http, new PassThroughPayloadFilter, [

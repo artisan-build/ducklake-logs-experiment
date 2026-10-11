@@ -49,16 +49,21 @@ attached bucket under:
 s3://<cloud-bucket>/ducklake/logs/
 ```
 
-DuckLake owns filenames. The `logs` table is partitioned by `app_slug` and `event_date`; current
-DuckLake emits Hive-style paths. The runtime creates temporary DuckDB secrets from Laravel's
+DuckLake owns filenames. The `logs` table is partitioned by `event_date`, sorted by
+`app_slug, occurred_at`, and targets 32 MB data files; current DuckLake emits Hive-style paths.
+The runtime creates temporary DuckDB secrets from Laravel's
 resolved Postgres and S3 configuration for each CLI process. Credentials are sent to DuckDB on
 stdin and are never persisted in DuckDB secret storage or a file.
 
 The flusher disables data inlining (`DATA_INLINING_ROW_LIMIT 0`) because the product requirement is
-that log rows land in Parquet, not the catalog. A daily maintenance command explicitly merges
-adjacent small files, then runs `CHECKPOINT` to rewrite data files, expire eligible snapshots, and
-clean old or orphaned files. Thirty days is the experiment's safety window for snapshot/file
-deletion.
+that log rows land in Parquet, not the catalog. A daily maintenance command merges at most three
+sorted outputs per invocation so it stays inside the Flex 512 MiB limit, and records 30-day expiry
+and deletion windows. Snapshot expiry and physical cleanup remain an explicit production follow-up.
+
+Postgres also holds three derived query-plane structures: hourly counts, an event-ID locator, and
+the small error-event subset. The flusher updates them only after the DuckLake write succeeds. They
+make aggregate, context, and long-range one-app error queries fast without duplicating the complete
+raw log corpus in Postgres.
 
 ## Compatibility boundary for a Rust ingest edge
 

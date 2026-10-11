@@ -25,13 +25,15 @@ class DuckDb
             return [];
         }
 
-        $decoded = json_decode($output, true);
+        foreach (array_reverse(preg_split('/\R/', $output) ?: []) as $line) {
+            $decoded = json_decode($line, true);
 
-        if (! is_array($decoded)) {
-            throw new RuntimeException('DuckDB returned an unreadable response.');
+            if (is_array($decoded)) {
+                return array_is_list($decoded) ? $decoded : [$decoded];
+            }
         }
 
-        return array_is_list($decoded) ? $decoded : [$decoded];
+        throw new RuntimeException('DuckDB returned an unreadable response.');
     }
 
     /** @return array<string, mixed> */

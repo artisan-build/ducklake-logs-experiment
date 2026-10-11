@@ -17,10 +17,9 @@ class CompactLake extends Command
         $before = $duckDb->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
         $result = $duckDb->query(
             "CALL lake.set_option('target_file_size', '32MB', table_name => 'logs'); "
-            ."CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 100); "
+            ."CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 10); "
             ."CALL lake.set_option('expire_older_than', '30 days'); "
             ."CALL lake.set_option('delete_older_than', '30 days'); "
-            .'CHECKPOINT; '
             ."SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');",
             300,
         );

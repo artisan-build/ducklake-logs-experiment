@@ -26,7 +26,7 @@ class LakeQueries
                 ->where('app_slug', (string) $filters['app'])
                 ->where('occurred_at', '>=', (string) $filters['from'])
                 ->where('occurred_at', '<=', (string) $filters['to'])
-                ->orderByDesc('occurred_at')
+                ->latest('occurred_at')
                 ->limit($limit)
                 ->get(['event_id', 'app_slug', 'occurred_at', 'level', 'channel', 'message', 'context', 'extra']);
 

@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Models\LogBatch;
 use App\Support\DuckDb;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -49,7 +49,7 @@ class FlushLogBatches
         foreach ($batches as $batch) {
             foreach ((array) $batch->payload as $log) {
                 $values[] = $this->rowSql($batch, (array) $log);
-                $timestamp = Carbon::parse((string) $log['timestamp'])->utc();
+                $timestamp = Date::parse((string) $log['timestamp'])->utc();
                 $locators[] = [
                     'event_id' => (string) $log['id'],
                     'app_slug' => $batch->app->slug,

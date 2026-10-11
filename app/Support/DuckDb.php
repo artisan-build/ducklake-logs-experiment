@@ -68,15 +68,17 @@ class DuckDb
             }
         }
 
-        $profileSql = $this->preamble()."\n"
-            ."CALL enable_logging('HTTP');\n"
+        $profileSql = "CALL enable_logging(level := 'DEBUG', storage := 'memory');\n"
+            .$this->preamble()."\n"
             .'EXPLAIN ANALYZE '.rtrim(trim($sql), ';').";\n"
-            ."SELECT request.type AS method, response.status AS status, count(*) AS requests, coalesce(sum(request.duration_ms), 0) AS request_ms FROM duckdb_logs_parsed('HTTP') GROUP BY ALL ORDER BY method, status;";
+            ."SELECT request.type AS method, response.status AS status, count(*) AS requests, coalesce(sum(request.duration_ms), 0) AS request_ms FROM duckdb_logs_parsed('HTTP') GROUP BY ALL ORDER BY method, status;\n"
+            .'SELECT type AS log_type, count(*) AS log_entries FROM duckdb_logs GROUP BY ALL ORDER BY log_type;';
         $profile = $this->runRaw($profileSql, $timeout);
         $decoded = $this->decodeJsonLines($profile['stdout']);
         $rawPlan = $profile['stdout']."\n".$profile['stderr'];
         $plan = preg_replace('/\e\[[0-9;]*m/', '', $rawPlan) ?? $rawPlan;
         $http = [];
+        $logTypes = [];
 
         foreach ($decoded as $row) {
             if (isset($row['explain_value'])) {
@@ -86,10 +88,16 @@ class DuckDb
             if (isset($row['requests'])) {
                 $http[] = $row;
             }
+
+            if (isset($row['log_entries'])) {
+                $logTypes[(string) $row['log_type']] = (int) $row['log_entries'];
+            }
         }
 
         preg_match('/Total Time:\s*([0-9.]+)s/', $plan, $totalMatch);
         preg_match('/HTTP Requests:\s*([0-9]+)/', $plan, $requestMatch);
+        preg_match('/#GET:\s*([0-9]+)/', $plan, $getMatch);
+        preg_match('/#HEAD:\s*([0-9]+)/', $plan, $headMatch);
         preg_match('/in:\s*([^\n│]+)/', $plan, $bytesInMatch);
         preg_match('/out:\s*([^\n│]+)/', $plan, $bytesOutMatch);
 
@@ -106,9 +114,12 @@ class DuckDb
             'profile_wall_ms' => round($profile['wall_ms'], 2),
             'query_total_ms' => isset($totalMatch[1]) ? round(((float) $totalMatch[1]) * 1000, 2) : null,
             'explain_http_requests' => isset($requestMatch[1]) ? (int) $requestMatch[1] : null,
+            'explain_get_requests' => isset($getMatch[1]) ? (int) $getMatch[1] : null,
+            'explain_head_requests' => isset($headMatch[1]) ? (int) $headMatch[1] : null,
             'explain_bytes_in' => isset($bytesInMatch[1]) ? trim($bytesInMatch[1]) : null,
             'explain_bytes_out' => isset($bytesOutMatch[1]) ? trim($bytesOutMatch[1]) : null,
             'http' => $http,
+            'log_types' => $logTypes,
         ];
     }
 

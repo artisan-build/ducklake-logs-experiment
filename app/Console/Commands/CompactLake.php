@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\DuckDb;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class CompactLake extends Command
 {
@@ -13,8 +14,25 @@ class CompactLake extends Command
 
     public function handle(DuckDb $duckDb): int
     {
-        $duckDb->query("CALL lake.set_option('expire_older_than', '7 days'); CALL lake.set_option('delete_older_than', '7 days'); CHECKPOINT; SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
-        $this->components->info('DuckLake checkpoint completed.');
+        $before = $duckDb->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
+        $result = $duckDb->query(
+            "CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 10); "
+            ."CALL lake.set_option('expire_older_than', '30 days'); "
+            ."CALL lake.set_option('delete_older_than', '30 days'); "
+            .'CHECKPOINT; '
+            ."SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');",
+            300,
+        );
+
+        $filesBefore = (int) ($before[0]['files'] ?? 0);
+        $filesAfter = (int) (($result[array_key_last($result)]['files'] ?? 0));
+
+        Log::info('DuckLake scheduled maintenance completed.', [
+            'files_before' => $filesBefore,
+            'files_after' => $filesAfter,
+        ]);
+
+        $this->components->info("DuckLake maintenance completed ({$filesBefore} -> {$filesAfter} files).");
 
         return self::SUCCESS;
     }

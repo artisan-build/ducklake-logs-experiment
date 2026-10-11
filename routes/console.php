@@ -3,7 +3,8 @@
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('logs:flush')->everyMinute()->withoutOverlapping();
-Schedule::command('logs:compact')->dailyAt('03:15')->withoutOverlapping(60);
+// Temporary experiment cadence: restored to daily after the live scheduler probe.
+Schedule::command('logs:compact')->everyMinute()->withoutOverlapping(60);
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;

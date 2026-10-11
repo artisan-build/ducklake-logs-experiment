@@ -13,7 +13,7 @@ class CompactLake extends Command
 
     public function handle(DuckDb $duckDb): int
     {
-        $duckDb->query("CALL lake.set_option('expire_older_than', '7 days'); CALL lake.set_option('delete_older_than', '7 days'); CHECKPOINT; SELECT count(*) snapshots FROM lake.ducklake_snapshots();", 300);
+        $duckDb->query("CALL lake.set_option('expire_older_than', '7 days'); CALL lake.set_option('delete_older_than', '7 days'); CHECKPOINT; SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
         $this->components->info('DuckLake checkpoint completed.');
 
         return self::SUCCESS;

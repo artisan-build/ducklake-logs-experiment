@@ -6,6 +6,7 @@ use App\Console\Commands\FlushLogs;
 use App\Console\Commands\Fresh;
 use App\Console\Commands\GenerateLogs;
 use App\Console\Commands\InstallFluxPro;
+use App\Console\Commands\IssueLogApp;
 use App\Console\Commands\OptimizeTailwind;
 use App\Console\Commands\ProbeDriver;
 use App\Console\Commands\SeedLake;
@@ -29,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ProbeDriver::class,
         SeedLake::class,
         InstallFluxPro::class,
+        IssueLogApp::class,
         OptimizeTailwind::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

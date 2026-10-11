@@ -8,6 +8,9 @@ search tools.
 
 This is evidence-producing experiment code, not a production package.
 
+Self-registration is disabled. Provision or rotate an operator login with `php artisan
+logs:create-admin operator@example.test`; the generated password is displayed once.
+
 ## Raw-log warning
 
 The driver sends logs **unmodified by default**, including message text, nested context, exception

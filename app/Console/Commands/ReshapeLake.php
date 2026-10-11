@@ -40,24 +40,31 @@ class ReshapeLake extends Command
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs_phase2');
             SQL, 120);
 
-        $result = $duckDb->query(<<<'SQL'
-            BEGIN;
-            INSERT INTO lake.logs_phase2 SELECT * FROM lake.logs;
-            ALTER TABLE lake.logs RENAME TO logs_phase1_archive;
-            ALTER TABLE lake.logs_phase2 RENAME TO logs;
-            COMMIT;
-            SELECT
-                (SELECT count(*) FROM lake.logs_phase1_archive) AS source_rows,
-                (SELECT count(*) FROM lake.logs) AS rewritten_rows,
-                (SELECT count(*) FROM ducklake_list_files('lake', 'logs_phase1_archive')) AS source_files,
-                (SELECT count(*) FROM ducklake_list_files('lake', 'logs')) AS rewritten_files;
-            SQL, 900);
+        $dates = $duckDb->query('SELECT DISTINCT event_date::VARCHAR AS event_date FROM lake.logs ORDER BY event_date;', 300);
 
-        $stats = $result[array_key_last($result)] ?? [];
+        foreach ($dates as $date) {
+            $literal = $duckDb->literal((string) $date['event_date']);
+            $duckDb->query("INSERT INTO lake.logs_phase2 SELECT * FROM lake.logs WHERE event_date = CAST({$literal} AS DATE);", 300);
+            $this->components->info('Rewrote '.$date['event_date'].'.');
+        }
+
+        $counts = $duckDb->query('SELECT (SELECT count(*) FROM lake.logs) AS source_rows, (SELECT count(*) FROM lake.logs_phase2) AS rewritten_rows;', 300);
+        $stats = $counts[array_key_last($counts)] ?? [];
 
         if (($stats['source_rows'] ?? null) !== ($stats['rewritten_rows'] ?? null)) {
             throw new RuntimeException('Rewritten row count does not match the phase-one archive.');
         }
+
+        $files = $duckDb->query(<<<'SQL'
+            BEGIN;
+            ALTER TABLE lake.logs RENAME TO logs_phase1_archive;
+            ALTER TABLE lake.logs_phase2 RENAME TO logs;
+            COMMIT;
+            SELECT
+                (SELECT count(*) FROM ducklake_list_files('lake', 'logs_phase1_archive')) AS source_files,
+                (SELECT count(*) FROM ducklake_list_files('lake', 'logs')) AS rewritten_files;
+            SQL, 120);
+        $stats = array_merge($stats, $files[array_key_last($files)] ?? []);
 
         $this->line((string) json_encode($stats, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 

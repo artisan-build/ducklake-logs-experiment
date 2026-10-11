@@ -234,7 +234,7 @@ class DuckDb
         $memory = $this->literal((string) config('ducklake.memory_limit', '384MB'));
         $threads = max(1, (int) config('ducklake.threads', 1));
 
-        return "SET threads={$threads}; SET memory_limit={$memory};";
+        return "SET threads={$threads}; SET memory_limit={$memory}; SET preserve_insertion_order=false;";
     }
 
     private function extensionsSql(): string

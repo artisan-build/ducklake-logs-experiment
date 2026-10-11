@@ -10,9 +10,9 @@ class DuckDb
     /** @return list<array<string, mixed>> */
     public function query(string $sql, int $timeout = 20): array
     {
-        $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-json']);
+        $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-jsonlines']);
         $process->setTimeout($timeout);
-        $process->setInput($this->preamble()."\n".$sql."\n");
+        $process->setInput($this->preamble()."\nSELECT '__DUCKLAKE_RESULT_START__' AS marker;\n".$sql."\nSELECT '__DUCKLAKE_RESULT_END__' AS marker;\n");
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -25,15 +25,7 @@ class DuckDb
             return [];
         }
 
-        foreach (array_reverse(preg_split('/\R/', $output) ?: []) as $line) {
-            $decoded = json_decode($line, true);
-
-            if (is_array($decoded)) {
-                return array_is_list($decoded) ? $decoded : [$decoded];
-            }
-        }
-
-        throw new RuntimeException('DuckDB returned an unreadable response.');
+        return $this->decodeFramedOutput($output);
     }
 
     /** @return array<string, mixed> */
@@ -81,6 +73,37 @@ class DuckDb
         }
 
         return "'".str_replace("'", "''", $value)."'";
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function decodeFramedOutput(string $output): array
+    {
+        $collecting = false;
+        $rows = [];
+
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            $decoded = json_decode($line, true);
+
+            if (! is_array($decoded)) {
+                continue;
+            }
+
+            if (($decoded['marker'] ?? null) === '__DUCKLAKE_RESULT_START__') {
+                $collecting = true;
+
+                continue;
+            }
+
+            if (($decoded['marker'] ?? null) === '__DUCKLAKE_RESULT_END__') {
+                return $rows;
+            }
+
+            if ($collecting && array_keys($decoded) !== ['Success']) {
+                $rows[] = $decoded;
+            }
+        }
+
+        throw new RuntimeException('DuckDB returned an unreadable response.');
     }
 
     private function preamble(): string

@@ -37,7 +37,7 @@ class DuckDb
 
         $process = new Process([(string) config('ducklake.binary'), '-unsigned', '-jsonlines']);
         $process->setTimeout($timeout);
-        $attach = 'ATTACH '.$this->literal('postgres:'.$this->postgresDsn()).' AS appdb (TYPE postgres);';
+        $attach = 'ATTACH '.$this->literal($this->postgresDsn()).' AS appdb (TYPE postgres);';
         $process->setInput($this->preamble()."\n{$attach}\nSELECT '__DUCKLAKE_RESULT_START__' AS marker;\n".$sql."\nSELECT '__DUCKLAKE_RESULT_END__' AS marker;\n");
         $process->run();
 
